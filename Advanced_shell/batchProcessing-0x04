@@ -1,0 +1,52 @@
+#!/bin/bash
+
+# Pokémon list
+pokemon_list=(bulbasaur ivysaur venusaur charmander charmeleon)
+
+# Output directory
+output_dir="pokemon_data"
+log_file="fetch_errors.log"
+
+# Create output directory and clear logs
+mkdir -p "$output_dir"
+> "$log_file"
+
+# Fetch function (used by each background job)
+fetch_pokemon() {
+  local name="$1"
+  local output="$output_dir/$name.json"
+  local attempts=0
+  local max_attempts=3
+
+  while [ $attempts -lt $max_attempts ]; do
+    ((attempts++))
+    echo "Fetching $name (attempt $attempts)..."
+
+    # Perform the request
+    response=$(curl -s -w "%{http_code}" -o "$output" "https://pokeapi.co/api/v2/pokemon/$name")
+    status="${response: -3}"
+
+    if [ "$status" -eq 200 ]; then
+      echo "Saved $name data to $output "
+      return
+    else
+      echo "  $name attempt $attempts failed (HTTP $status)"
+      sleep 1
+    fi
+  done
+
+  echo "❌ $name failed after $max_attempts attempts"
+  echo "[$(date)] $name - Failed after $max_attempts attempts (HTTP $status)" >> "$log_file"
+  rm -f "$output"
+}
+
+# Start fetching all Pokémon in parallel
+for name in "${pokemon_list[@]}"; do
+  fetch_pokemon "$name" &
+done
+
+# Wait for all background jobs to complete
+wait
+
+echo ""
+echo " All fetch operations complete."
