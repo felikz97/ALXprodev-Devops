@@ -1,29 +1,47 @@
 #!/bin/bash
 
-# List of Pokémon (all lowercase)
+# List of Pokémon (lowercase)
 pokemon_list=(bulbasaur ivysaur venusaur charmander charmeleon)
-
-# Output directory
 output_dir="pokemon_data"
+log_file="fetch_errors.log"
 
-# Create the directory if it doesn't exist
+# Create output directory if not exists
 mkdir -p "$output_dir"
+> "$log_file"  # Clear log file
+
+# Function to fetch Pokémon data with retry logic
+fetch_pokemon() {
+  local name="$1"
+  local attempts=0
+  local max_attempts=3
+  local success=false
+
+  while [ $attempts -lt $max_attempts ]; do
+    ((attempts++))
+    echo "Fetching data for $name... (Attempt $attempts)"
+
+    response=$(curl -s -w "%{http_code}" -o "$output_dir/$name.json" "https://pokeapi.co/api/v2/pokemon/$name")
+    http_status="${response: -3}"
+
+    if [ "$http_status" -eq 200 ]; then
+      echo "Saved data to $output_dir/$name.json "
+      success=true
+      break
+    else
+      echo "  Attempt $attempts failed for $name (HTTP $http_status)"
+      sleep 1
+    fi
+  done
+
+  if ! $success; then
+    echo " Failed to fetch $name after $max_attempts attempts. Logging error."
+    echo "[$(date)] $name - Failed with HTTP status $http_status after $max_attempts attempts" >> "$log_file"
+    rm -f "$output_dir/$name.json"
+  fi
+}
 
 # Loop through each Pokémon
 for name in "${pokemon_list[@]}"; do
-    echo "Fetching data for $name..."
-    
-    # API request and save response
-    response=$(curl -s -w "%{http_code}" -o "$output_dir/$name.json" "https://pokeapi.co/api/v2/pokemon/$name")
-    status_code="${response: -3}"
-
-    if [ "$status_code" -eq 200 ]; then
-        echo "Saved data to $output_dir/$name.json "
-    else
-        echo " Failed to fetch data for $name (HTTP $status_code)"
-        rm -f "$output_dir/$name.json"
-    fi
-
-    # Delay to prevent rate-limiting (recommended by PokeAPI: 100ms+)
-    sleep 1
+  fetch_pokemon "$name"
+  sleep 1  # Delay to avoid rate limiting
 done
